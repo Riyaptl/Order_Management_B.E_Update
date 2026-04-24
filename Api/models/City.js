@@ -10,6 +10,17 @@ const CitySchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: "Area",
   }],
+  state: {
+    type: String
+  },
+  sales: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "User"
+  }],
+  partners: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "User"
+  }],
   createdBy: {
     type: String,
     required: true,

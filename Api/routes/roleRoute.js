@@ -4,7 +4,8 @@ const checkRole = require("../middlewares/RoleAuth");
 const checkDepartment = require("../middlewares/DepartmentAuth");
 const { createRole,
     getRole,
-    updateRole, } = require("../controllers/roleController");
+    updateRole,
+    getNextLowerRole, } = require("../controllers/roleController");
 
 const router = express.Router();
 
@@ -16,5 +17,8 @@ router.post("/read", authenticateUser, checkDepartment("Admin", "HR"), getRole);
 
 // Update department in Role
 router.post("/edit/:roleId", authenticateUser, checkDepartment("Admin", "HR"), updateRole);
+
+// Get next role 
+router.post("/next/:roleId", authenticateUser, checkDepartment("Admin", "HR"), getNextLowerRole);
 
 module.exports = router;

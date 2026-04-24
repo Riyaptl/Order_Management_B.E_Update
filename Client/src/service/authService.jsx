@@ -1,4 +1,6 @@
 const baseURL = process.env.REACT_APP_API_BASE_URL;
+console.log(baseURL);
+
 const API_BASE = `${baseURL}/auth`;
 
 export const loginUser = async (data) => {

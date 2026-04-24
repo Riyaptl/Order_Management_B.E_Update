@@ -7,15 +7,17 @@ const {
 
 const authenticateUser = require("../middlewares/JwtAuth");
 const checkRole = require("../middlewares/RoleAuth"); 
+const checkDepartment = require("../middlewares/DepartmentAuth"); 
 
 const router = express.Router();
 
-// Admin-only
-router.post("/", authenticateUser, checkRole("admin"), createCity);
-router.post("/:id", authenticateUser, checkRole("admin"), updateCity);
+// Create city
+router.post("/", authenticateUser, checkDepartment("Admin", "HR"), createCity);
 
-// Public (or authenticated)
+// Update city
+router.post("/:id", authenticateUser, checkDepartment("Admin", "HR"), updateCity);
+
+// Get cities [state filter]
 router.get("/", authenticateUser, getAllCities);
-
 
 module.exports = router;

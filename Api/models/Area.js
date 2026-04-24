@@ -6,8 +6,11 @@ const AreaSchema = new mongoose.Schema({
     required: true,
     unique: true,
   },
-  distributor: {
+  sale: {
     type: String,
+  },
+  partner: {
+    type: String
   },
   shops: [{
     type: mongoose.Schema.Types.ObjectId,
@@ -19,6 +22,9 @@ const AreaSchema = new mongoose.Schema({
   city: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "City"
+  },
+  city_name: {
+    type: String
   },
   createdBy: {
     type: String,
@@ -37,6 +43,9 @@ const AreaSchema = new mongoose.Schema({
   deletedAt: {
     type: Date,
   },
+  lastActivityAt: {
+    type: Date
+  }
 }, { timestamps: true });
 
 module.exports = mongoose.model("Area", AreaSchema);

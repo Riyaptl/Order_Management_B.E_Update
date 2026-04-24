@@ -25,6 +25,7 @@ router.post("/names/all", authenticateUser, getAllAreas);
 // CSV Export
 router.post("/csv/export", authenticateUser, checkRole("admin", "tl"), csvExportArea);
 
+// Get areas of selected users assigned city array 
 
 
 module.exports = router;

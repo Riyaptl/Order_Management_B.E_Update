@@ -48,6 +48,13 @@ const UserSchema = new Schema({
     city_name: [{
         type: String
     }],
+    areas: [{
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Area"
+    }],
+    areas_name: [{
+        type: String
+    }],
     gst: {
         type: String
     },
@@ -88,6 +95,18 @@ const UserSchema = new Schema({
     assignedAt: {
         type: Date
     },
+    assignedPartnerBy: {
+        type: String
+    },
+    assignedPartnerAt: {
+        type: Date
+    },
+    assignedAreaBy: {
+        type: String
+    },
+    assignedAreaAt: {
+        type: Date
+    },
     partners: [{
         type: mongoose.Schema.Types.ObjectId,
         ref: "User"
@@ -95,7 +114,8 @@ const UserSchema = new Schema({
     companyPersonal: [{
         type: mongoose.Schema.Types.ObjectId,
         ref: "User"
-    }]
+    }],
+    target: [{}]
 }, { timestamps: true });
 
 UserSchema.statics.login = async function ({ username, password }) {

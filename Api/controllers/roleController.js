@@ -44,7 +44,7 @@ const getRole = async (req, res) => {
         query["dept_name"] = department
     }
 
-    const data = await Role.find(query);
+    const data = await Role.find(query).select("name");
 
     res.status(200).json(data);
   } catch (error) {
@@ -105,8 +105,54 @@ const updateRole = async (req, res) => {
   }
 };
 
+// Get next role
+
+const getNextLowerRole = async (req, res) => {
+    try {
+        const { roleId } = req.params;
+
+        // Find the passed role first
+        const currentRole = await Role.findById(roleId);
+
+        if (!currentRole) {
+            return res.status(404).json({
+                success: false,
+                message: "Role not found"
+            });
+        }
+
+        // Since rank is stored as String, convert to Number
+        const nextRank = Number(currentRole.rank) + 1;
+
+        // Find role with same department and rank +1
+        const nextHigherRole = await Role.findOne({
+            department: currentRole.department,
+            rank: String(nextRank)
+        }).select("name rank");
+
+        if (!nextHigherRole) {
+            return res.status(404).json({
+                success: false,
+                message: "No higher role found"
+            });
+        }
+
+        return res.status(200).json({
+            role: nextHigherRole
+        });
+
+    } catch (error) {
+        console.error(error);
+        return res.status(500).json({
+            success: false,
+            message: "Server error"
+        });
+    }
+};
+
 module.exports = {
   createRole,
   getRole,
   updateRole,
+  getNextLowerRole
 };

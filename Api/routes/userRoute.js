@@ -1,6 +1,6 @@
 const express = require("express");
 const router = express.Router();
-const { getSRDetails, getAllSRs, getAllDists, createPartner, getDists, editDists, statusDists, createUser, setDepartmentRole, assignUsers, getUsers, assignUsersWithoutSub, assignOrphans, promoteUser, demoteUser, getPartner, editPartner } = require("../controllers/userController");
+const { createPartner, createUser, setDepartmentRole, assignUsers, assignAreas , getUsers, assignUsersWithoutSub, assignOrphans, promoteUser, demoteUser, getPartner, editPartner, editUser, statusPartner, partnerAssignment, getUserAreas, getSalesUsers } = require("../controllers/userController");
 const authenticateUser = require("../middlewares/JwtAuth");
 const checkDepartment = require("../middlewares/DepartmentAuth");
 const checkRole = require("../middlewares/RoleAuth");
@@ -8,8 +8,14 @@ const checkRole = require("../middlewares/RoleAuth");
 // Create user
 router.post("/", authenticateUser, checkDepartment("Admin", "HR"), createUser);
 
+// Update user
+router.post("/edit/:id", authenticateUser, editUser);
+
+// Update areas [add area included]
+router.post("/routes/:id", authenticateUser, checkDepartment("Admin", "HR", "Sales"), assignAreas);
+
 // Read users - complete
-router.post("/users/:id", authenticateUser, getUsers);
+router.post("/user/:id", authenticateUser, getUsers);
 
 // Assign role and department
 router.post("/dept_role/:id", authenticateUser, checkDepartment("Admin", "HR"), setDepartmentRole);
@@ -29,6 +35,9 @@ router.post("/promote/:id", authenticateUser, checkDepartment("Admin", "HR"), pr
 // Demote 
 router.post("/demote/:id", authenticateUser, checkDepartment("Admin", "HR"), demoteUser);
 
+// Get sales users
+router.post("/sales", authenticateUser, checkDepartment("Admin", "HR", "Sales"), getSalesUsers);
+
 
 
 // Partners page
@@ -39,21 +48,18 @@ router.post("/partner", authenticateUser, checkDepartment("Admin", "HR", "Sales"
 router.post("/partner/read", authenticateUser, checkDepartment("Admin", "HR", "Sales"), getPartner);  
 
 // update distributors
-router.post("/partner/edit/:id", authenticateUser, checkDepartment("Admin", "HR"," Sales"), editPartner);
+router.post("/partner/edit/:id", authenticateUser, checkDepartment("Admin", "HR", "Sales"), editPartner);
 
 // activate / inactivate distributor
-router.post("/dist/status/:id", authenticateUser, checkRole("admin"), statusDists);
+router.post("/partner/status/:id", authenticateUser, checkDepartment("Admin", "HR", "Sales"), checkRole("Admin", "HR Head", "NSM", "RSM", "ASM", "SM"), statusPartner);
 
 // Update partner assignment
+router.post("/partner/assign/:id", authenticateUser, checkDepartment("Admin", "HR", "Sales"), checkRole("Admin", "HR Head", "NSM", "RSM", "ASM", "SM"), partnerAssignment);
 
-// Only admin should access this
-router.post("/srDetails", authenticateUser, checkRole("admin", "tl"), getSRDetails);
+// Get user's details [Along with subordinates]
+router.post("/details/:id", authenticateUser, checkDepartment("Admin", "HR", "Sales"), getUserAreas);
 
-// Only admin should access this
-router.get("/srs", authenticateUser, checkRole("admin", "tl"), getAllSRs);
-
-// Only admin should access this
-router.get("/dists", authenticateUser, checkRole("admin", "tl", "sr"), getAllDists);
-
+// Update areas [add area included] - Partners[Distributor]
+router.post("/routes/:id", authenticateUser, checkDepartment("Admin", "HR", "Sales"), getUserAreas);
 
 module.exports = router;

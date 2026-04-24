@@ -17,7 +17,7 @@ const createDepartment = async (req, res) => {
 
 const getDepartment = async (req, res) => {
   try {
-    const data = await Department.find();
+    const data = await Department.find().select("name");
 
     res.status(200).json(data);
   } catch (error) {
