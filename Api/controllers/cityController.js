@@ -108,8 +108,44 @@ const getAllCities = async (req, res) => {
   }
 };
 
+// get cities for dropdown
+const getCitiesDrop = async (req, res) => {
+  try {
+    let cityIds = [];
+
+    if (!["HR", "Admin"].includes(req.user.dept_name)) {
+      // 🔹 Get logged in user + subordinates
+      const reqUser = await User.findById(req.user._id).select("city subordinates");
+
+      const allUsers = await User.find({
+        _id: { $in: [req.user._id, ...reqUser.subordinates] }
+      }).select("city");
+
+      // 🔹 Collect all unique city ids
+      cityIds = [...new Set(
+        allUsers.flatMap(u => u.city.map(c => c.toString()))
+      )];
+    }
+
+    // 🔹 Build query
+    const query = {};
+    if (cityIds.length > 0) {
+      query._id = { $in: cityIds };
+    }
+
+    const cities = await City.find(query).select("_id name");
+
+    res.status(200).json({ cities });
+
+  } catch (error) {
+    if (error.status) return res.status(error.status).json({ message: error.message });
+    res.status(500).json({ message: error.message });
+  }
+};
+
 module.exports = {
   createCity,
   updateCity,
   getAllCities,
+  getCitiesDrop
 };

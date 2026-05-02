@@ -1,6 +1,6 @@
 const express = require("express");
 const router = express.Router();
-const { createPartner, createUser, setDepartmentRole, assignUsers, assignAreas , getUsers, assignUsersWithoutSub, assignOrphans, promoteUser, demoteUser, getPartner, editPartner, editUser, statusPartner, partnerAssignment, getUserAreas, getSalesUsers } = require("../controllers/userController");
+const { createPartner, createUser, setDepartmentRole, assignUsers, assignAreas , getUsers, assignUsersWithoutSub, assignOrphans, promoteUser, demoteUser, getPartner, editPartner, editUser, statusPartner, partnerAssignment, getUserAreas, assignAreasToPartner, updateUserCity, getUsersDrop } = require("../controllers/userController");
 const authenticateUser = require("../middlewares/JwtAuth");
 const checkDepartment = require("../middlewares/DepartmentAuth");
 const checkRole = require("../middlewares/RoleAuth");
@@ -8,11 +8,11 @@ const checkRole = require("../middlewares/RoleAuth");
 // Create user
 router.post("/", authenticateUser, checkDepartment("Admin", "HR"), createUser);
 
-// Update user
+// Update user - pass "city" only if city array is changed
 router.post("/edit/:id", authenticateUser, editUser);
 
 // Update areas [add area included]
-router.post("/routes/:id", authenticateUser, checkDepartment("Admin", "HR", "Sales"), assignAreas);
+router.post("/routes/:id", authenticateUser, assignAreas);
 
 // Read users - complete
 router.post("/user/:id", authenticateUser, getUsers);
@@ -21,13 +21,13 @@ router.post("/user/:id", authenticateUser, getUsers);
 router.post("/dept_role/:id", authenticateUser, checkDepartment("Admin", "HR"), setDepartmentRole);
 
 // Assign users
-router.post("/assign/:id", authenticateUser, checkDepartment("Admin", "HR"), assignUsers);
+router.post("/assign/:id", authenticateUser, assignUsers);
 
 // Assign users - without subordinates
-router.post("/assignNoSub/:id", authenticateUser, checkDepartment("Admin", "HR"), assignUsersWithoutSub);
+router.post("/assignNoSub/:id", authenticateUser, assignUsersWithoutSub);
 
 // Assign Orphans
-router.post("/assignOrphans/:id", authenticateUser, checkDepartment("Admin", "HR"), assignOrphans);
+router.post("/assignOrphans/:id", authenticateUser, assignOrphans);
 
 // Promote 
 router.post("/promote/:id", authenticateUser, checkDepartment("Admin", "HR"), promoteUser);
@@ -35,31 +35,33 @@ router.post("/promote/:id", authenticateUser, checkDepartment("Admin", "HR"), pr
 // Demote 
 router.post("/demote/:id", authenticateUser, checkDepartment("Admin", "HR"), demoteUser);
 
-// Get sales users
-router.post("/sales", authenticateUser, checkDepartment("Admin", "HR", "Sales"), getSalesUsers);
+// Get users - filtered on role
+router.post("/sales", authenticateUser, getUsersDrop);
 
+// Get user's details [Along with subordinates]
+router.post("/details/:id", authenticateUser, getUserAreas);
+
+// Make city updates - can overwrite city array
+router.post("/city/:id", authenticateUser, updateUserCity);
 
 
 // Partners page
 // Create Partner
-router.post("/partner", authenticateUser, checkDepartment("Admin", "HR", "Sales"), checkRole("Admin", "HR Head", "NSM", "RSM", "ASM", "SM"), createPartner);
+router.post("/partner", authenticateUser, checkDepartment("Admin", "HR"), createPartner);
 
 // Read Partners
-router.post("/partner/read", authenticateUser, checkDepartment("Admin", "HR", "Sales"), getPartner);  
+router.post("/partner/read", authenticateUser, getPartner);  
 
-// update distributors
-router.post("/partner/edit/:id", authenticateUser, checkDepartment("Admin", "HR", "Sales"), editPartner);
+// update partners - pass "city" only if city array is changed
+router.post("/partner/edit/:id", authenticateUser, editPartner);
 
-// activate / inactivate distributor
-router.post("/partner/status/:id", authenticateUser, checkDepartment("Admin", "HR", "Sales"), checkRole("Admin", "HR Head", "NSM", "RSM", "ASM", "SM"), statusPartner);
+// activate / inactivate partners
+router.post("/partner/status/:id", authenticateUser, statusPartner);
 
 // Update partner assignment
-router.post("/partner/assign/:id", authenticateUser, checkDepartment("Admin", "HR", "Sales"), checkRole("Admin", "HR Head", "NSM", "RSM", "ASM", "SM"), partnerAssignment);
-
-// Get user's details [Along with subordinates]
-router.post("/details/:id", authenticateUser, checkDepartment("Admin", "HR", "Sales"), getUserAreas);
+router.post("/partner/assign/:id", authenticateUser, partnerAssignment);
 
 // Update areas [add area included] - Partners[Distributor]
-router.post("/routes/:id", authenticateUser, checkDepartment("Admin", "HR", "Sales"), getUserAreas);
+router.post("/partner/routes/:id", authenticateUser, assignAreasToPartner);
 
 module.exports = router;

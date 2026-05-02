@@ -133,79 +133,47 @@ const createUser = async (req, res) => {
   }
 };
 
-// Helper: Check if logged in Sales user has access to given user id
-const checkSalesAccess = async (reqUser, id) => {
-  if (reqUser.dept_name !== "Sales") return;
+// Helper: Check if logged in Sales user has access to given user
+const checkUserAccess  = async (reqUser, id) => {
+ if (["HR", "Admin"].includes(reqUser.dept_name)) return;
   if (reqUser._id.toString() === id) return;
 
   const user = await User.findById(reqUser._id).select("subordinates");
-  const isInSubordinates = user.subordinates.map(s => s.toString()).includes(id);
+  const isInSubordinates = user.subordinates
+    .map((s) => s.toString())
+    .includes(id);
   if (!isInSubordinates) {
     throw { status: 403, message: "You do not have access to this user" };
   }
 };
 
-// Edit company user
+// Edit company user 
 const editUser = async (req, res) => {
   try {
     const { id } = req.params;
 
-    let { password, confirmPass, email, city, contact } = req.body;
+    let { password, confirmPass, email, contact } = req.body;
 
-    // 🔹 Find partner first
+    // 🔹 Find user first
     const user = await User.findOne({ _id: id });
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
 
-    await checkSalesAccess(req.user, id)
+    await checkUserAccess (req.user, id);
 
     const updateFields = {};
 
     if (email) updateFields.email = email.trim();
     if (contact) updateFields.contact = contact.trim();
 
-    // 🔹 Check if cities have changed
-      // 🔹 Find cities if passed
-    let cityIds = [];
-    let cityNames = [];
-    if (city && Array.isArray(city) && city.length > 0) {
-      const cityDocs = await City.find({
-        name: { $in: city.map((c) => c.trim()) },
-      }).select("_id name");
-      if (cityDocs.length !== city.length) {
-        return res
-          .status(404)
-          .json({ message: "One or more cities not found" });
-      }
-    
-    const existingCityIds = user.city.map((c) => c.toString()).sort();
-    const newCityIds = cityDocs.map((c) => c._id.toString()).sort();
-    const citiesChanged =
-      JSON.stringify(existingCityIds) !== JSON.stringify(newCityIds);
+    // ============================================================
+    // 🔹 PASSWORD UPDATE
+    // ============================================================
 
-    if (citiesChanged) {
-      updateFields.city = cityDocs.map((c) => c._id);
-      updateFields.city_name = cityDocs.map((c) => c.name);
-
-      // Remove user from old cities
-      await City.updateMany(
-        { _id: { $in: user.city } },
-        { $pull: { sales: user._id } },
-      );
-      // Add user to new cities
-      await City.updateMany(
-        { _id: { $in: cityDocs.map((c) => c._id) } },
-        { $addToSet: { sales: user._id } },
-      );
-    }}
-
-    // 🔹 Password update
     if (password) {
       if (!confirmPass) {
-        return res
-          .status(400)
-          .json({ message: "Please confirm your password" });
+        return res.status(400).json({ message: "Please confirm your password" });
       }
       if (password.trim() !== confirmPass.trim()) {
         return res.status(400).json({ message: "Passwords do not match" });
@@ -219,7 +187,9 @@ const editUser = async (req, res) => {
     await User.findByIdAndUpdate(id, { $set: updateFields }, { new: true });
 
     res.status(200).json({ message: "User updated successfully" });
+
   } catch (error) {
+    if (error.status) return res.status(error.status).json({ message: error.message });
     res.status(500).json({ message: error.message });
   }
 };
@@ -229,7 +199,7 @@ const assignAreasHelper = async (req, user, areasId, areaField, deptName) => {
   // 🔹 Find all areas
   const areaDocs = await Area.find({
     _id: { $in: areasId },
-    deleted: false
+    deleted: false,
   }).select(`_id name city_name ${areaField} lastActivityAt`);
 
   if (areaDocs.length !== areasId.length) {
@@ -255,46 +225,55 @@ const assignAreasHelper = async (req, user, areasId, areaField, deptName) => {
     ) {
       throw {
         status: 400,
-        message: `Area ${area.name} is actively being used by ${area[areaField]}, cannot reassign within 24hrs of last activity`
+        message: `Area ${area.name} is actively being used by ${area[areaField]}, cannot reassign within 24hrs of last activity`,
       };
     }
   }
 
   // 🔹 CLEANUP PHASE
-  const existingAreaIds = user.areas.map(a => a.toString());
-  const newAreaIds = areasId.map(a => a.toString());
+  const existingAreaIds = user.areas.map((a) => a.toString());
+  const newAreaIds = areasId.map((a) => a.toString());
 
-  const toRemove = existingAreaIds.filter(a => !newAreaIds.includes(a));
-  const toAdd = areaDocs.filter(a => !existingAreaIds.includes(a._id.toString()));
+  const toRemove = existingAreaIds.filter((a) => !newAreaIds.includes(a));
+  const toAdd = areaDocs.filter(
+    (a) => !existingAreaIds.includes(a._id.toString()),
+  );
 
   if (toRemove.length > 0) {
     await Area.updateMany(
       { _id: { $in: toRemove } },
-      { $set: { [areaField]: "" } }
+      { $set: { [areaField]: "" } },
     );
   }
 
   // 🔹 Free newly assigned areas from previous owners
-  const occupiedAreas = toAdd.filter(a => a[areaField] && a[areaField] !== "" && a[areaField] !== user.username);
+  const occupiedAreas = toAdd.filter(
+    (a) =>
+      a[areaField] && a[areaField] !== "" && a[areaField] !== user.username,
+  );
   if (occupiedAreas.length > 0) {
-    const previousOwnerUsernames = [...new Set(occupiedAreas.map(a => a[areaField]))];
+    const previousOwnerUsernames = [
+      ...new Set(occupiedAreas.map((a) => a[areaField])),
+    ];
     const previousOwners = await User.find({
       username: { $in: previousOwnerUsernames },
-      dept_name: deptName
+      dept_name: deptName,
     }).select("_id username areas areas_name");
 
     for (let owner of previousOwners) {
       const ownerAreasToRemove = occupiedAreas
-        .filter(a => a[areaField] === owner.username)
-        .map(a => a._id.toString());
+        .filter((a) => a[areaField] === owner.username)
+        .map((a) => a._id.toString());
 
-      const updatedAreas = owner.areas.filter(a => !ownerAreasToRemove.includes(a.toString()));
-      const updatedAreasName = owner.areas_name.filter((_, i) =>
-        !ownerAreasToRemove.includes(owner.areas[i].toString())
+      const updatedAreas = owner.areas.filter(
+        (a) => !ownerAreasToRemove.includes(a.toString()),
+      );
+      const updatedAreasName = owner.areas_name.filter(
+        (_, i) => !ownerAreasToRemove.includes(owner.areas[i].toString()),
       );
 
       await User.findByIdAndUpdate(owner._id, {
-        $set: { areas: updatedAreas, areas_name: updatedAreasName }
+        $set: { areas: updatedAreas, areas_name: updatedAreasName },
       });
     }
   }
@@ -302,17 +281,17 @@ const assignAreasHelper = async (req, user, areasId, areaField, deptName) => {
   // 🔹 UPDATE PHASE
   await User.findByIdAndUpdate(user._id, {
     $set: {
-      areas: areaDocs.map(a => a._id),
-      areas_name: areaDocs.map(a => a.name),
+      areas: areaDocs.map((a) => a._id),
+      areas_name: areaDocs.map((a) => a.name),
       assignedAreaBy: req.user.username,
-      assignedAreaAt: new Date()
-    }
+      assignedAreaAt: new Date(),
+    },
   });
 
   if (toAdd.length > 0) {
     await Area.updateMany(
-      { _id: { $in: toAdd.map(a => a._id) } },
-      { $set: { [areaField]: user.username } }
+      { _id: { $in: toAdd.map((a) => a._id) } },
+      { $set: { [areaField]: user.username } },
     );
   }
 };
@@ -324,21 +303,31 @@ const assignAreas = async (req, res) => {
     const { areasId } = req.body;
 
     if (!areasId || !Array.isArray(areasId) || areasId.length === 0) {
-      return res.status(400).json({ message: "areasId must be a non-empty array" });
+      return res
+        .status(400)
+        .json({ message: "areasId must be a non-empty array" });
     }
 
-    const user = await User.findById(id).select("username active dept_name city_name areas areas_name");
+    const user = await User.findById(id).select(
+      "username active dept_name city_name areas areas_name",
+    );
     if (!user) return res.status(404).json({ message: "User not found" });
-    if (!user.active) return res.status(400).json({ message: "Cannot assign areas to an inactive user" });
-    if (user.dept_name !== "Sales") return res.status(400).json({ message: "Areas can only be assigned to Sales department users" });
+    if (!user.active)
+      return res
+        .status(400)
+        .json({ message: "Cannot assign areas to an inactive user" });
+    if (user.dept_name !== "Sales")
+      return res.status(400).json({
+        message: "Areas can only be assigned to Sales department users",
+      });
 
-    await checkSalesAccess(req.user, id);
+    await checkUserAccess (req.user, id);
     await assignAreasHelper(req, user, areasId, "sale", "Sales");
 
     res.status(200).json({ message: "Areas assigned successfully" });
-
   } catch (error) {
-    if (error.status) return res.status(error.status).json({ message: error.message });
+    if (error.status)
+      return res.status(error.status).json({ message: error.message });
     res.status(500).json({ message: error.message });
   }
 };
@@ -449,7 +438,7 @@ const getAllAncestors = async (userId) => {
   return [...new Set(ancestors.map((a) => a._id.toString()))];
 };
 
-// Assign users helper
+// Helper - Assign users checks
 const validateAssignment = async (id, usersId, requireOrphans = false) => {
   // 🔹 Prevent self-assignment
   if (usersId.includes(id)) {
@@ -540,6 +529,32 @@ const validateAssignment = async (id, usersId, requireOrphans = false) => {
   return { parentUser, childUsers, ancestorIds };
 };
 
+// Helper - logged in user access check for assigning users
+const checkHierarchyAccess = async (reqUser, id, usersId) => {
+  if (reqUser.dept_name !== "Sales") return;
+
+  const user = await User.findById(reqUser._id).select("subordinates");
+  const subordinateIds = user.subordinates.map((s) => s.toString());
+
+  // Parent must be strictly in subordinates — not themselves
+  if (!subordinateIds.includes(id)) {
+    throw {
+      status: 403,
+      message: "You do not have access to this parent user",
+    };
+  }
+
+  // All children must be in subordinates
+  for (let childId of usersId) {
+    if (!subordinateIds.includes(childId.toString())) {
+      throw {
+        status: 403,
+        message: "One or more users are not in your hierarchy",
+      };
+    }
+  }
+};
+
 // Assign users
 const assignUsers = async (req, res) => {
   try {
@@ -551,6 +566,8 @@ const assignUsers = async (req, res) => {
         .status(400)
         .json({ message: "usersId must be a non-empty array" });
     }
+
+    await checkHierarchyAccess(req.user, id, usersId);
 
     // Validate checks
     const { childUsers, ancestorIds } = await validateAssignment(id, usersId);
@@ -638,6 +655,8 @@ const assignUsersWithoutSub = async (req, res) => {
         .json({ message: "usersId must be a non-empty array" });
     }
 
+    await checkHierarchyAccess(req.user, id, usersId);
+
     // Validate checks
     const { childUsers, ancestorIds } = await validateAssignment(id, usersId);
 
@@ -721,6 +740,8 @@ const assignOrphans = async (req, res) => {
         .status(400)
         .json({ message: "usersId must be a non-empty array" });
     }
+
+    await checkHierarchyAccess(req.user, id, usersId);
 
     // Validate Checks
     const { childUsers, ancestorIds } = await validateAssignment(
@@ -1005,6 +1026,274 @@ const demoteUser = async (req, res) => {
   }
 };
 
+// User's routes data with subordinates
+const getUserAreas = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // 🔹 Sales restriction — passed id must be logged in user or in their subordinates
+    if (!["HR", "Admin"].includes(req.user.dept_name)) {
+      if (req.user._id.toString() !== id) {
+        const reqUser = await User.findById(req.user._id).select(
+          "subordinates",
+        );
+        const isInSubordinates = reqUser.subordinates
+          .map((s) => s.toString())
+          .includes(id);
+        if (!isInSubordinates) {
+          return res
+            .status(403)
+            .json({ message: "You do not have access to this user" });
+        }
+      }
+    }
+
+    const mainUser = await User.findById(id).select("subordinates");
+    if (!mainUser) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    const allUserIds = [id, ...mainUser.subordinates.map((s) => s.toString())];
+
+    const users = await User.find({ _id: { $in: allUserIds } })
+      .select("username role_name areas partners")
+      .populate({
+        path: "partners",
+        match: { active: true },
+        select: "username city_name",
+      });
+
+    // 🔹 Collect all unique area ids across all users
+    const allAreaIds = [
+      ...new Set(users.flatMap((u) => u.areas.map((a) => a.toString()))),
+    ];
+
+    // 🔹 Fetch all areas in one query — get name and city_name
+    const areaDocs = await Area.find({ _id: { $in: allAreaIds } }).select(
+      "_id name city_name",
+    );
+
+    // 🔹 Build areaId -> { name, city_name } map
+    const areaMap = {};
+    areaDocs.forEach((a) => {
+      areaMap[a._id.toString()] = {
+        name: a.name,
+        city_name: a.city_name,
+      };
+    });
+
+    // 🔹 Build response
+    const data = users.map((u) => {
+      const routes = {};
+
+      u.areas.forEach((areaId) => {
+        const area = areaMap[areaId.toString()];
+        if (!area) return;
+
+        if (!routes[area.city_name]) {
+          routes[area.city_name] = [];
+        }
+        routes[area.city_name].push(area.name);
+      });
+
+      return {
+        username: u.username,
+        role: u.role_name,
+        routes,
+        partners: u.partners.map((p) => ({
+          username: p.username,
+          city: p.city_name,
+        })),
+      };
+    });
+
+    res.status(200).json({
+      total: data.length,
+      data,
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+
+// City updates in user and partner
+const updateUserCity = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { city } = req.body;
+
+    if (!city || !Array.isArray(city) || city.length === 0) {
+      return res.status(400).json({ message: "city must be a non-empty array" });
+    }
+
+    // 🔹 Find user/partner
+    const user = await User.findById(id).select("username dept_name city city_name areas areas_name partners companyPersonal");
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // 🔹 Determine type
+    const isSales = user.dept_name === "Sales";
+    const isPartner = user.dept_name === "Partners";
+
+    if (!isSales && !isPartner) {
+      return res.status(400).json({ message: "City update only allowed for Sales and Partners department users" });
+    }
+
+    // 🔹 Access check
+    if (isSales) await checkHierarchyAccess (req.user, id);
+    if (isPartner) await checkPartnerAccess(req.user, user);
+
+    // 🔹 Look up all new cities
+    const newCityDocs = await City.find({
+      name: { $in: city.map(c => c.trim()) }
+    }).select("_id name");
+
+    if (newCityDocs.length !== city.length) {
+      return res.status(404).json({ message: "One or more cities not found" });
+    }
+
+    const existingCityIds = user.city.map(c => c.toString());
+    const newCityIds = newCityDocs.map(c => c._id.toString());
+
+    // 🔹 Cities to remove — in old but not in new
+    const toRemoveIds = existingCityIds.filter(c => !newCityIds.includes(c));
+
+    // 🔹 Cities to add — in new but not in old
+    const toAddDocs = newCityDocs.filter(c => !existingCityIds.includes(c._id.toString()));
+
+    // ============================================================
+    // 🔹 CLEANUP FOR REMOVED CITIES
+    // ============================================================
+
+    if (toRemoveIds.length > 0) {
+      const removedCityDocs = await City.find({ _id: { $in: toRemoveIds } }).select("_id name");
+      const removedCityNames = removedCityDocs.map(c => c.name);
+
+      // 🔹 Remaining city names after removal
+      const remainingCityNames = user.city_name.filter(c => !removedCityNames.includes(c));
+
+      // 🔹 Find and clear areas in removed cities
+      const areasToRemove = await Area.find({
+        _id: { $in: user.areas },
+        city_name: { $in: removedCityNames }
+      }).select("_id name");
+
+      if (areasToRemove.length > 0) {
+        const areaIdsToRemove = areasToRemove.map(a => a._id.toString());
+        const areaNamesToRemove = areasToRemove.map(a => a.name);
+
+        // 🔹 Clear sale/partner field in removed areas
+        await Area.updateMany(
+          { _id: { $in: areaIdsToRemove } },
+          { $set: { [isSales ? "sale" : "partner"]: "" } }
+        );
+
+        // 🔹 Remove areas from user in memory
+        user.areas = user.areas.filter(a => !areaIdsToRemove.includes(a.toString()));
+        user.areas_name = user.areas_name.filter(n => !areaNamesToRemove.includes(n));
+      }
+
+      if (isSales) {
+        // 🔹 Remove partners with no remaining common city
+        if (user.partners && user.partners.length > 0) {
+          const partnerDocs = await User.find({
+            _id: { $in: user.partners }
+          }).select("_id city_name");
+
+          const partnersToRemove = partnerDocs.filter(p =>
+            !p.city_name.some(c => remainingCityNames.includes(c))
+          );
+
+          if (partnersToRemove.length > 0) {
+            const partnerIdsToRemove = partnersToRemove.map(p => p._id);
+
+            // 🔹 Remove user from partner's companyPersonal
+            await User.updateMany(
+              { _id: { $in: partnerIdsToRemove } },
+              { $pull: { companyPersonal: user._id } }
+            );
+
+            // 🔹 Remove partners from user in memory
+            user.partners = user.partners.filter(
+              p => !partnerIdsToRemove.map(i => i.toString()).includes(p.toString())
+            );
+          }
+        }
+      }
+
+      if (isPartner) {
+        // 🔹 Remove companyPersonal users with no remaining common city
+        if (user.companyPersonal && user.companyPersonal.length > 0) {
+          const companyDocs = await User.find({
+            _id: { $in: user.companyPersonal }
+          }).select("_id city_name");
+
+          const usersToRemove = companyDocs.filter(u =>
+            !u.city_name.some(c => remainingCityNames.includes(c))
+          );
+
+          if (usersToRemove.length > 0) {
+            const userIdsToRemove = usersToRemove.map(u => u._id);
+
+            // 🔹 Remove partner from user's partners array
+            await User.updateMany(
+              { _id: { $in: userIdsToRemove } },
+              { $pull: { partners: user._id } }
+            );
+
+            // 🔹 Remove users from partner's companyPersonal in memory
+            user.companyPersonal = user.companyPersonal.filter(
+              u => !userIdsToRemove.map(i => i.toString()).includes(u.toString())
+            );
+          }
+        }
+      }
+
+      // 🔹 Remove user from old cities' sales/partners array
+      await City.updateMany(
+        { _id: { $in: toRemoveIds } },
+        { $pull: { [isSales ? "sales" : "partners"]: user._id } }
+      );
+    }
+
+    // ============================================================
+    // 🔹 ADD NEW CITIES
+    // ============================================================
+
+    if (toAddDocs.length > 0) {
+      await City.updateMany(
+        { _id: { $in: toAddDocs.map(c => c._id) } },
+        { $addToSet: { [isSales ? "sales" : "partners"]: user._id } }
+      );
+    }
+
+    // ============================================================
+    // 🔹 SAVE ALL UPDATES
+    // ============================================================
+
+    const finalUpdate = {
+      city: newCityDocs.map(c => c._id),
+      city_name: newCityDocs.map(c => c.name),
+      areas: user.areas,
+      areas_name: user.areas_name,
+      updatedBy: req.user.username
+    };
+
+    if (isSales) finalUpdate.partners = user.partners;
+    if (isPartner) finalUpdate.companyPersonal = user.companyPersonal;
+
+    await User.findByIdAndUpdate(id, { $set: finalUpdate });
+
+    res.status(200).json({ message: "City updated successfully" });
+
+  } catch (error) {
+    if (error.status) return res.status(error.status).json({ message: error.message });
+    res.status(500).json({ message: error.message });
+  }
+};
+
 // Create Partner
 const createPartner = async (req, res) => {
   try {
@@ -1067,7 +1356,7 @@ const createPartner = async (req, res) => {
     }
 
     // 🔹 Sales restriction — userId must be in logged in user's subordinates
-    if (req.user.dept_name === "Sales") {
+    if (!["HR", "Admin"].includes(req.user.dept_name)) {
       const reqUser = await User.findById(req.user._id).select("subordinates");
       const isInSubordinates = reqUser.subordinates
         .map((s) => s.toString())
@@ -1155,7 +1444,7 @@ const getPartner = async (req, res) => {
     }
 
     // 🔹 Sales restriction — show only partners linked to logged in user or their subordinates
-    if (req.user.dept_name === "Sales") {
+    if (!["HR", "Admin"].includes(req.user.dept_name)) {
       const reqUser = await User.findById(req.user._id).select("subordinates");
       const relevantUserIds = [req.user._id, ...reqUser.subordinates];
       query.companyPersonal = { $in: relevantUserIds };
@@ -1174,7 +1463,7 @@ const getPartner = async (req, res) => {
   }
 };
 
-// Helper: Sales team access check
+// Helper: Sales team partner access check
 const checkPartnerAccess = async (reqUser, partner) => {
   if (reqUser.dept_name !== "Sales") return; // no restriction for non-Sales
 
@@ -1192,13 +1481,12 @@ const checkPartnerAccess = async (reqUser, partner) => {
   }
 };
 
-// Edit partner
+// Edit partner 
 const editPartner = async (req, res) => {
   try {
     const { id } = req.params;
 
-    let { name, password, confirmPass, email, gst, city, address, contact } =
-      req.body;
+    let { name, password, confirmPass, email, gst, address, contact } = req.body;
 
     // 🔹 Find partner first
     const partner = await User.findOne({ _id: id, dept_name: "Partners" });
@@ -1216,42 +1504,13 @@ const editPartner = async (req, res) => {
     if (address) updateFields.address = address.trim();
     if (contact) updateFields.contact = contact.trim();
 
-    // 🔹 Check if cities have changed
-    const existingCityNames = partner.city_name.map((c) => c.trim()).sort();
-    const newCityNames = city.map((c) => c.trim()).sort();
-    const citiesChanged =
-      JSON.stringify(existingCityNames) !== JSON.stringify(newCityNames);
+    // ============================================================
+    // 🔹 PASSWORD UPDATE
+    // ============================================================
 
-    if (citiesChanged) {
-      const cityDocs = await City.find({
-        name: { $in: city.map((c) => c.trim()) },
-      }).select("_id name");
-      if (cityDocs.length !== city.length) {
-        return res
-          .status(404)
-          .json({ message: "One or more cities not found" });
-      }
-
-      updateFields.city = cityDocs.map((c) => c._id);
-      updateFields.city_name = cityDocs.map((c) => c.name);
-
-      await City.updateMany(
-        { _id: { $in: partner.city } },
-        { $pull: { partners: partner._id } },
-      );
-
-      await City.updateMany(
-        { _id: { $in: cityDocs.map((c) => c._id) } },
-        { $addToSet: { partners: partner._id } },
-      );
-    }
-
-    // 🔹 Password update
     if (password) {
       if (!confirmPass) {
-        return res
-          .status(400)
-          .json({ message: "Please confirm your password" });
+        return res.status(400).json({ message: "Please confirm your password" });
       }
       if (password.trim() !== confirmPass.trim()) {
         return res.status(400).json({ message: "Passwords do not match" });
@@ -1265,7 +1524,9 @@ const editPartner = async (req, res) => {
     await User.findByIdAndUpdate(id, { $set: updateFields }, { new: true });
 
     res.status(200).json({ message: "Partner updated successfully" });
+
   } catch (error) {
+    if (error.status) return res.status(error.status).json({ message: error.message });
     res.status(500).json({ message: error.message });
   }
 };
@@ -1277,21 +1538,31 @@ const assignAreasToPartner = async (req, res) => {
     const { areasId } = req.body;
 
     if (!areasId || !Array.isArray(areasId) || areasId.length === 0) {
-      return res.status(400).json({ message: "areasId must be a non-empty array" });
+      return res
+        .status(400)
+        .json({ message: "areasId must be a non-empty array" });
     }
 
-    const partner = await User.findById(id).select("username active dept_name city_name areas areas_name");
+    const partner = await User.findById(id).select(
+      "username active dept_name city_name areas areas_name",
+    );
     if (!partner) return res.status(404).json({ message: "Partner not found" });
-    if (!partner.active) return res.status(400).json({ message: "Cannot assign areas to an inactive partner" });
-    if (partner.dept_name !== "Partners") return res.status(400).json({ message: "Use assignAreas for Sales department users" });
+    if (!partner.active)
+      return res
+        .status(400)
+        .json({ message: "Cannot assign areas to an inactive partner" });
+    if (partner.dept_name !== "Partners")
+      return res
+        .status(400)
+        .json({ message: "Use assignAreas for Sales department users" });
 
     await checkPartnerAccess(req.user, partner);
     await assignAreasHelper(req, partner, areasId, "partner", "Partners");
 
     res.status(200).json({ message: "Areas assigned to partner successfully" });
-
   } catch (error) {
-    if (error.status) return res.status(error.status).json({ message: error.message });
+    if (error.status)
+      return res.status(error.status).json({ message: error.message });
     res.status(500).json({ message: error.message });
   }
 };
@@ -1420,7 +1691,7 @@ const partnerAssignment = async (req, res) => {
     }
 
     // 🔹 Sales restriction — all usersId must be in logged in user's subordinates
-    if (req.user.dept_name === "Sales") {
+   if (!["HR", "Admin"].includes(req.user.dept_name)) {
       const reqUser = await User.findById(req.user._id).select("subordinates");
       const subordinateIds = reqUser.subordinates.map((s) => s.toString());
       for (let user of users) {
@@ -1510,109 +1781,19 @@ const partnerAssignment = async (req, res) => {
   }
 };
 
-// User's routes data with subordinates
-const getUserAreas = async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    // 🔹 Sales restriction — passed id must be logged in user or in their subordinates
-    if (req.user.dept_name === "Sales") {
-      if (req.user._id.toString() !== id) {
-        const reqUser = await User.findById(req.user._id).select(
-          "subordinates",
-        );
-        const isInSubordinates = reqUser.subordinates
-          .map((s) => s.toString())
-          .includes(id);
-        if (!isInSubordinates) {
-          return res
-            .status(403)
-            .json({ message: "You do not have access to this user" });
-        }
-      }
-    }
-
-    const mainUser = await User.findById(id).select("subordinates");
-    if (!mainUser) {
-      return res.status(404).json({ message: "User not found" });
-    }
-
-    const allUserIds = [id, ...mainUser.subordinates.map((s) => s.toString())];
-
-    const users = await User.find({ _id: { $in: allUserIds } })
-      .select("username role_name areas partners")
-      .populate({
-        path: "partners",
-        match: { active: true },
-        select: "username city_name",
-      });
-
-    // 🔹 Collect all unique area ids across all users
-    const allAreaIds = [
-      ...new Set(users.flatMap((u) => u.areas.map((a) => a.toString()))),
-    ];
-
-    // 🔹 Fetch all areas in one query — get name and city_name
-    const areaDocs = await Area.find({ _id: { $in: allAreaIds } }).select(
-      "_id name city_name",
-    );
-
-    // 🔹 Build areaId -> { name, city_name } map
-    const areaMap = {};
-    areaDocs.forEach((a) => {
-      areaMap[a._id.toString()] = {
-        name: a.name,
-        city_name: a.city_name,
-      };
-    });
-
-    // 🔹 Build response
-    const data = users.map((u) => {
-      const routes = {};
-
-      u.areas.forEach((areaId) => {
-        const area = areaMap[areaId.toString()];
-        if (!area) return;
-
-        if (!routes[area.city_name]) {
-          routes[area.city_name] = [];
-        }
-        routes[area.city_name].push(area.name);
-      });
-
-      return {
-        username: u.username,
-        role: u.role_name,
-        routes,
-        partners: u.partners.map((p) => ({
-          username: p.username,
-          city: p.city_name,
-        })),
-      };
-    });
-
-    res.status(200).json({
-      total: data.length,
-      data,
-    });
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-};
-
 // Get sales users
-const getSalesUsers = async (req, res) => {
+const getUsersDrop = async (req, res) => {
   try {
-    const {role} = req.body
+    const { role } = req.body;
 
-    let query = { dept_name: "Sales", active: true };
+    let query = { active: true };
 
     if (role) {
-      query["role_name"] = role
+      query["role_name"] = role;
     }
-    
+
     // 🔹 Sales restriction — only show subordinates
-    if (req.user.dept_name === "Sales") {
+    if (!["HR", "Admin"].includes(req.user.dept_name)) {
       const reqUser = await User.findById(req.user._id).select("subordinates");
       query._id = { $in: reqUser.subordinates };
     }
@@ -1620,14 +1801,14 @@ const getSalesUsers = async (req, res) => {
     const users = await User.find(query).select("_id username");
 
     res.status(200).json({ users });
-
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
 };
 
+
 module.exports = {
-  getSalesUsers,
+  getUsersDrop,
   createUser,
   editUser,
   assignAreas,
@@ -1645,4 +1826,5 @@ module.exports = {
   statusPartner,
   partnerAssignment,
   getUserAreas,
+  updateUserCity
 };

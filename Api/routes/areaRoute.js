@@ -1,31 +1,39 @@
 const express = require("express");
 const {
   createArea,
-  updateAreaName,
+  updateArea,
   deleteArea,
   getAllAreas,
   getAreas,
-  csvExportArea
+  csvExportArea,
+  getAreasDrop
 } = require("../controllers/areaController");
 
 const authenticateUser = require("../middlewares/JwtAuth");
 const checkRole = require("../middlewares/RoleAuth"); 
+const checkDepartment = require("../middlewares/DepartmentAuth"); 
 
 const router = express.Router();
 
-// Admin-only
-router.post("/admin", authenticateUser, checkRole("admin", "tl"), getAreas);
-router.post("/", authenticateUser, checkRole("admin", "tl"), createArea);
-router.post("/:id", authenticateUser, checkRole("admin", "tl"), updateAreaName);
-router.post("/delete/one/:id", authenticateUser, checkRole("admin", "tl"), deleteArea);
+// Create area
+router.post("/", authenticateUser, createArea);
+
+// Update area
+router.post("/:id", authenticateUser, updateArea);
+
+// Delet area
+router.post("/delete/one/:id", authenticateUser, deleteArea);
+
+// Read areas
+router.post("/read", authenticateUser, getAreas);
+
+// Get areas dropdown - city compulsory [move to getShopsList]
+router.post("/names/all", authenticateUser, getAreasDrop);
 
 // Public (or authenticated)
-router.post("/names/all", authenticateUser, getAllAreas);
+// router.post("/names/all", authenticateUser, getAllAreas);
 
 // CSV Export
-router.post("/csv/export", authenticateUser, checkRole("admin", "tl"), csvExportArea);
-
-// Get areas of selected users assigned city array 
-
+// router.post("/csv/export", authenticateUser, checkRole("admin", "tl"), csvExportArea);
 
 module.exports = router;

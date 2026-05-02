@@ -32,7 +32,7 @@ export const fetchAllAreasService = async ({page, dist_username}) => {
   const token = localStorage.getItem("token");
   if (!token) throw new Error("Auth token not found");
 
-  const res = await fetch(`${AREA_API}/admin?page=${page}`, {
+  const res = await fetch(`${AREA_API}/read?page=${page}`, {
     method: "POST",
     credentials: 'include',
     headers: {

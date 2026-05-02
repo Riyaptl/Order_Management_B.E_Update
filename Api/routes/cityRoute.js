@@ -2,7 +2,8 @@ const express = require("express");
 const {
   updateCity,
   getAllCities,
-  createCity
+  createCity,
+  getCitiesDrop
 } = require("../controllers/cityController");
 
 const authenticateUser = require("../middlewares/JwtAuth");
@@ -19,5 +20,8 @@ router.post("/:id", authenticateUser, checkDepartment("Admin", "HR"), updateCity
 
 // Get cities [state filter]
 router.get("/", authenticateUser, getAllCities);
+
+// Get cities drop [move to getAreasDrop]
+router.get("/names/all", authenticateUser, getCitiesDrop);
 
 module.exports = router;
