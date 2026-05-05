@@ -115,7 +115,6 @@ const UserSchema = new Schema({
         type: mongoose.Schema.Types.ObjectId,
         ref: "User"
     }],
-    target: [{}]
 }, { timestamps: true });
 
 UserSchema.statics.login = async function ({ username, password }) {

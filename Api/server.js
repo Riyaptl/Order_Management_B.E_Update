@@ -21,6 +21,9 @@ const announcementRoute = require('./routes/announcementRoute')
 const inventoryRoute = require('./routes/inventoryRoute')
 const departmentRoute = require('./routes/departmentRoute')
 const roleRoute = require('./routes/roleRoute')
+const pricingRoute = require('./routes/pricingRoute')
+const categoryRoute = require('./routes/categoryRoute')
+const productRoute = require('./routes/productRoute')
 const cors = require('cors');
 
 
@@ -73,4 +76,7 @@ app.use("/api/announcement", announcementRoute)
 
 app.use("/api/department", departmentRoute)
 app.use("/api/role", roleRoute)
+app.use("/api/pricing", pricingRoute)
+app.use("/api/category", categoryRoute)
+app.use("/api/product", productRoute)
 
