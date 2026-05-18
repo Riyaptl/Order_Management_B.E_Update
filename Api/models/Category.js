@@ -10,6 +10,9 @@ const CategorySchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: "Product"
   }],
+  rate: {
+    type: String
+  },
   createdBy: {
     type: String
   },

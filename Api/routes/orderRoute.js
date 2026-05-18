@@ -3,47 +3,34 @@ const router = express.Router();
 
 const authenticateUser = require("../middlewares/JwtAuth");
 const checkRole = require("../middlewares/RoleAuth");
+const checkDepartment = require("../middlewares/DepartmentAuth");
 
 const {
   createOrder,
-  getOrdersByArea,
+  getOrders,
   softDeleteOrder,
   csvExportOrder,
-  dailyReport,
   getSalesReport,
-  getOrdersBySR,
-  getOrdersByDate,
-  dailyCallsReport,
 } = require("../controllers/orderController");
 
+// Orders part
 
-// router.post("/fix", fixTotals);
+// Create an order - calc orderValue on frontend
+router.post("/", authenticateUser, checkDepartment("Admin", "Sales", "HR"), createOrder);
 
-// Daily report
-router.post("/report", authenticateUser, checkRole("admin", "sr", "tl"), dailyReport);
+// Read Orders - City selection will open for area and SR drop, 
+router.post("/all/area", authenticateUser, checkDepartment("Admin", "Sales", "HR"), getOrders);
 
-// Calls report
-router.post("/calls/report", authenticateUser, checkRole("admin", "sr", "tl"), dailyCallsReport);
+// Soft Delete Order 
+router.post("/remove/:id", authenticateUser, checkDepartment("Admin", "HR"), softDeleteOrder);
 
-// 1. Create an order
-router.post("/", authenticateUser, checkRole("admin", "sr", "distributor", "tl"), createOrder);
-
-// 2. Read Orders by Area (Admin, Dist access)
-router.post("/all/area", authenticateUser, checkRole("admin", "sr", "distributor", "tl"), getOrdersByArea);
-
-// 2. Read Orders by SR (Admin, Dist access)
-router.post("/all/sr", authenticateUser, checkRole("admin", "sr", "tl"), getOrdersBySR);
-
-// Read Orders by Date (Admin, Dist access)
-router.post("/all/date", authenticateUser, checkRole("admin", "sr", "distributor", "tl"), getOrdersByDate);
-
-// 3. Soft Delete Order (Admin access)
-router.post("/remove/:id", authenticateUser, checkRole("admin"), softDeleteOrder);
+// Report part
 
 // Get sales report (Admin, Dist access)
 router.post("/sales/report", authenticateUser, checkRole("admin", "sr", "distributor", "tl"), getSalesReport);
 
+
 // 4. CSV Export
 router.post("/csv/export", authenticateUser, checkRole("admin", "sr", "distributor", "tl"), csvExportOrder);
-
+// router.post("/fix", fixTotals);
 module.exports = router;

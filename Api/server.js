@@ -24,6 +24,8 @@ const roleRoute = require('./routes/roleRoute')
 const pricingRoute = require('./routes/pricingRoute')
 const categoryRoute = require('./routes/categoryRoute')
 const productRoute = require('./routes/productRoute')
+const targetReportRoute = require('./routes/targetReportRoute')
+const workingReportRoute = require('./routes/workingReportRoute')
 const cors = require('cors');
 
 
@@ -79,4 +81,6 @@ app.use("/api/role", roleRoute)
 app.use("/api/pricing", pricingRoute)
 app.use("/api/category", categoryRoute)
 app.use("/api/product", productRoute)
+app.use("/api/targetReport", targetReportRoute)
+app.use("/api/workingReport", workingReportRoute)
 

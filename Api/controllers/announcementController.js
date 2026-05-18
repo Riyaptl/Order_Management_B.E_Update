@@ -8,9 +8,9 @@ const createAnnouncement = async (req, res) => {
       {remarks, createdBy: req.user.username, createdAt: Date.now()}
     );
 
-    res.status(200).json("message", "Announcement is created");
+    res.status(200).json({message: "Announcement is created"});
   } catch (error) {
-    res.status(500).json(error.message);
+    res.status(500).json({message: error.message});
   }
 };
 

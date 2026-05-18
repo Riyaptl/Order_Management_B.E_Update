@@ -17,6 +17,7 @@ const WorkingReportSchema = new mongoose.Schema({
   performance: {
     type: Map,
     of: new mongoose.Schema({
+      day: {type: String},
       Tc: { type: Number, default: 0 },
       PC: { type: Number, default: 0 }
     }, { _id: false }),

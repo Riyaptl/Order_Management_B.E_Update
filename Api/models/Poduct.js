@@ -20,6 +20,9 @@ const ProductSchema = new mongoose.Schema({
   category_name: {
     type: String
   },
+  rate: {
+    type: String
+  },
   createdBy: {
     type: String
   },

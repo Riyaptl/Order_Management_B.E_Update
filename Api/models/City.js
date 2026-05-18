@@ -11,7 +11,8 @@ const CitySchema = new mongoose.Schema({
     ref: "Area",
   }],
   state: {
-    type: String
+    type: String,
+    required: true
   },
   sales: [{
     type: mongoose.Schema.Types.ObjectId,

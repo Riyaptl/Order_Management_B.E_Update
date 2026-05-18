@@ -134,8 +134,8 @@ const createUser = async (req, res) => {
 };
 
 // Helper: Check if logged in Sales user has access to given user
-const checkUserAccess  = async (reqUser, id) => {
- if (["HR", "Admin"].includes(reqUser.dept_name)) return;
+const checkUserAccess = async (reqUser, id) => {
+  if (["HR", "Admin"].includes(reqUser.dept_name)) return;
   if (reqUser._id.toString() === id) return;
 
   const user = await User.findById(reqUser._id).select("subordinates");
@@ -160,7 +160,7 @@ const editUser = async (req, res) => {
       return res.status(404).json({ message: "User not found" });
     }
 
-    await checkUserAccess (req.user, id);
+    await checkUserAccess(req.user, id);
 
     const updateFields = {};
 
@@ -321,7 +321,7 @@ const assignAreas = async (req, res) => {
         message: "Areas can only be assigned to Sales department users",
       });
 
-    await checkUserAccess (req.user, id);
+    await checkUserAccess(req.user, id);
     await assignAreasHelper(req, user, areasId, "sale", "Sales");
 
     res.status(200).json({ message: "Areas assigned successfully" });
@@ -383,6 +383,30 @@ const getUsers = async (req, res) => {
   }
 };
 
+// Read orphans
+const getOrphans = async (req, res) => {
+  try {
+    // 🔹 Base query — users with no parent
+    const query = {
+      assignedTo: { $size: 0 },
+      active: true
+    };
+
+    // 🔹 Non HR/Admin — only show orphans within their subordinates
+    if (!["HR", "Admin"].includes(req.user.dept_name)) {
+      const reqUser = await User.findById(req.user._id).select("subordinates");
+      query._id = { $in: reqUser.subordinates };
+    }
+
+    const users = await User.find(query)
+
+    res.status(200).json({ users });
+
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 // Assign role and department
 const setDepartmentRole = async (req, res) => {
   try {
@@ -429,7 +453,7 @@ const setDepartmentRole = async (req, res) => {
   }
 };
 
-// Assign users helper
+// Helper - Assign users and cities
 const getAllAncestors = async (userId) => {
   const ancestors = await User.find({
     subordinates: new mongoose.Types.ObjectId(userId),
@@ -1142,7 +1166,7 @@ const updateUserCity = async (req, res) => {
     }
 
     // 🔹 Access check
-    if (isSales) await checkHierarchyAccess (req.user, id);
+    if (isSales) await checkHierarchyAccess(req.user, id);
     if (isPartner) await checkPartnerAccess(req.user, user);
 
     // 🔹 Look up all new cities
@@ -1266,6 +1290,45 @@ const updateUserCity = async (req, res) => {
       await City.updateMany(
         { _id: { $in: toAddDocs.map(c => c._id) } },
         { $addToSet: { [isSales ? "sales" : "partners"]: user._id } }
+      );
+    }
+
+    // ============================================================
+    // 🔹 UPDATE allCities FOR USER AND ALL ANCESTORS
+    // ============================================================
+
+    const ancestorIds = await getAllAncestors(id);
+    const userWithSubs = await User.findById(id).select("subordinates");
+
+    // 🔹 Handle removed cities
+    if (toRemoveIds.length > 0) {
+
+      await User.findByIdAndUpdate(id, {
+        $pullAll: { allCities: toRemoveIds }
+      });
+
+      for (const cityId of toRemoveIds) {
+        // 🔹 Check if any subordinate of given user still has this city
+        const stillUsed = await User.findOne({
+          _id: { $in: userWithSubs.subordinates },
+          city: cityId
+        });
+
+        if (!stillUsed) {
+          // No subordinate has this city — remove from ancestors
+          await User.updateMany(
+            { _id: { $in: ancestorIds } },
+            { $pull: { allCities: cityId } }
+          );
+        }
+      }
+    }
+
+    // 🔹 Handle added cities — add to user and all ancestors
+    if (toAddDocs.length > 0) {
+      await User.updateMany(
+        { _id: { $in: [id, ...ancestorIds] } },
+        { $addToSet: { allCities: { $each: toAddDocs.map(c => c._id) } } }
       );
     }
 
@@ -1425,7 +1488,7 @@ const createPartner = async (req, res) => {
   }
 };
 
-// Read distributors
+// Read partners
 const getPartner = async (req, res) => {
   try {
     const { city, role } = req.query;
@@ -1691,7 +1754,7 @@ const partnerAssignment = async (req, res) => {
     }
 
     // 🔹 Sales restriction — all usersId must be in logged in user's subordinates
-   if (!["HR", "Admin"].includes(req.user.dept_name)) {
+    if (!["HR", "Admin"].includes(req.user.dept_name)) {
       const reqUser = await User.findById(req.user._id).select("subordinates");
       const subordinateIds = reqUser.subordinates.map((s) => s.toString());
       for (let user of users) {
@@ -1806,6 +1869,33 @@ const getUsersDrop = async (req, res) => {
   }
 };
 
+// Get distributors - dropdown
+const getDistributorsDrop = async (req, res) => {
+  try {
+
+    // 🔹 Base query — Partners department only
+    let query = { dept_name: "Partners", role_name: "Distributor", active: true };
+
+    // 🔹 Sales restriction — show only distributors linked to logged in user or their subordinates
+    if (!["HR", "Admin"].includes(req.user.dept_name)) {
+      const reqUser = await User.findById(req.user._id).select("subordinates");
+      const relevantUserIds = [req.user._id, ...reqUser.subordinates];
+      query.companyPersonal = { $in: relevantUserIds };
+    }
+
+    const distributors = await User.find(query)
+      .select("username")
+      .sort({ createdAt: -1 });
+
+    res.status(200).json({
+      distributors,
+    });
+
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 
 module.exports = {
   getUsersDrop,
@@ -1813,6 +1903,7 @@ module.exports = {
   editUser,
   assignAreas,
   getUsers,
+  getOrphans,
   setDepartmentRole,
   assignUsers,
   assignUsersWithoutSub,
@@ -1826,5 +1917,6 @@ module.exports = {
   statusPartner,
   partnerAssignment,
   getUserAreas,
-  updateUserCity
+  updateUserCity,
+  getDistributorsDrop
 };

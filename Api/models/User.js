@@ -89,6 +89,10 @@ const UserSchema = new Schema({
         type: mongoose.Schema.Types.ObjectId,
         ref: "User"
     }],
+    allCities: [{
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "City"
+    }],
     assignedBy: {
         type: String
     },

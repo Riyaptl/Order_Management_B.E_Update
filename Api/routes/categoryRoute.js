@@ -2,7 +2,7 @@ const express = require("express");
 const authenticateUser = require("../middlewares/JwtAuth");
 const checkRole = require("../middlewares/RoleAuth"); 
 const checkDepartment = require("../middlewares/DepartmentAuth"); 
-const { createCategory, getAllCategories, getCategoryDrop, deleteCategory, updateCategory } = require("../controllers/categoryController");
+const { createCategory, getAllCategories, getCategoryDrop, deleteCategory, updateCategory, getCategoryRates } = require("../controllers/categoryController");
 
 const router = express.Router();
 
@@ -17,6 +17,9 @@ router.post("/read", authenticateUser, getAllCategories);
 
 // Read category - dropdown
 router.get("/names/all", authenticateUser, getCategoryDrop);
+
+// Get category wih rate
+router.get("/rates/all", authenticateUser, getCategoryRates);
 
 // Delete category slot
 router.post("/remove/:id", authenticateUser, checkDepartment("Admin", "HR"), deleteCategory);

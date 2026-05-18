@@ -6,6 +6,51 @@ const { ObjectId } = require("mongodb");
 const fs = require('fs');
 const fsPromises = fs.promises;
 const csv = require('csv-parser');
+const { checkCityAccess } = require("./areaController");
+
+// Validate products and category
+const validateOrderFields = async (products, total, existing_products, rate) => {
+
+  // 🔹 Fetch valid product names from DB — for products and existing_products
+  const productMaps = [products, existing_products].filter(Boolean);
+  if (productMaps.some(m => m && m.size > 0)) {
+    const allProductKeys = [...new Set(
+      productMaps.flatMap(m => m && m.size > 0 ? [...m.keys()] : [])
+    )];
+
+    const validProducts = await Product.find({
+      name: { $in: allProductKeys },
+      deleted: { $in: [false, null] }
+    }).select("name");
+    const validProductNames = validProducts.map(p => p.name);
+
+    for (let key of allProductKeys) {
+      if (!validProductNames.includes(key)) {
+        throw { status: 400, message: `Invalid product: ${key}` };
+      }
+    }
+  }
+
+  // 🔹 Fetch valid category names from DB — for total and rate
+  const categoryMaps = [total, rate].filter(Boolean);
+  if (categoryMaps.some(m => m && m.size > 0)) {
+    const allCategoryKeys = [...new Set(
+      categoryMaps.flatMap(m => m && m.size > 0 ? [...m.keys()] : [])
+    )];
+
+    const validCategories = await Category.find({
+      name: { $in: allCategoryKeys },
+      deleted: { $in: [false, null] }
+    }).select("name");
+    const validCategoryNames = validCategories.map(c => c.name);
+
+    for (let key of allCategoryKeys) {
+      if (!validCategoryNames.includes(key)) {
+        throw { status: 400, message: `Invalid category: ${key}` };
+      }
+    }
+  }
+};
 
 // 1. Create Shop
 const createShop = async (req, res) => {
@@ -18,11 +63,37 @@ const createShop = async (req, res) => {
 
     shop.area = areaId,
     shop.areaName = area.name
+    shop.city = area.city
+    shop.cityName = area.city_name
     await shop.save();
-    res.status(201).json("Shop created successfully");
+    res.status(201).json({message: "Shop created successfully"});
   } catch (error) {
     res.status(500).json(error.message);
   }
+};
+
+// Check shop access through city
+const checkShopAccess = async (reqUser, shopId) => {
+  if (["HR", "Admin"].includes(reqUser.dept_name)) return;
+
+  const shop = await Shop.findOne({_id: shopId, deleted: {$in: [null, false]}}).select("city");
+  if (!shop) {
+    throw { status: 404, message: "Shop not found" };
+  }
+
+  const user = await User.findById(reqUser._id).select("city subordinates");
+  const allUserIds = [reqUser._id, ...user.subordinates];
+
+  const cityAssigned = await User.findOne({
+    _id: { $in: allUserIds },
+    city: shop.city
+  });
+
+  if (!cityAssigned) {
+    throw { status: 403, message: "You do not have access to this shop" };
+  }
+
+  return shop; // return shop so controller doesn't need to fetch it again
 };
 
 // 2. Update Shop (only passed fields)
@@ -37,12 +108,14 @@ const updateShop = async (req, res) => {
         updates[field] = req.body[field];
       }
     });
-    updates["updatedBy"] = req.user.username
-    
-    const updatedShop = await Shop.findOneAndUpdate({_id: id, deleted: { $in: [false, null] }}, updates, { new: true });
-    if (!updatedShop) return res.status(404).json("Shop not found");
 
-    res.status(200).json(updatedShop);
+    const shop = await checkShopAccess(req.user, id);
+
+    Object.assign(shop, updates);
+    shop.updatedBy = req.user.username;
+    await shop.save();
+
+    res.status(200).json(shop);
   } catch (error) {
     res.status(500).json(error.message);
   }
@@ -52,18 +125,18 @@ const updateShop = async (req, res) => {
 const deleteShop = async (req, res) => {
   try {
     const { id, areaId } = req.body;
-    const deletedShop = await Shop.findOne({_id: id, deleted: { $in: [false, null] }});
-    if (!deletedShop) return res.status(404).json("Shop not found");
+
+    const shop = await checkShopAccess(req.user, id);
 
     const area = await Area.findOneAndUpdate({_id: areaId, deleted: { $in: [false, null] }}, { $pull: { shops: id } }, {new: true});
     if (!area) return res.status(404).json("Area not found");
 
     // deletedShop.area = area.id
     // deletedShop.areaName = area.name
-    deletedShop.deleted = true 
-    deletedShop.deletedBy = req.user.username
-    deletedShop.deletedAt = Date.now()
-    await deletedShop.save()
+    shop.deleted = true 
+    shop.deletedBy = req.user.username
+    shop.deletedAt = Date.now()
+    await shop.save()
  
     res.status(200).json({"message": "Shop deleted and removed from respective route"});
   } catch (error) {
@@ -75,14 +148,13 @@ const deleteShop = async (req, res) => {
 const blacklistShop = async (req, res) => {
   try {
     const { id } = req.body;
-    const blacklistedShop = await Shop.findOne({_id: id, deleted: { $in: [false, null] }});
-    if (!blacklistedShop) return res.status(404).json("Shop not found");
-    if (blacklistedShop.blacklisted) return res.status(404).json({message: "Shop is already blacklisted"})
+    const shop = await checkShopAccess(req.user, id);
+    if (shop.blacklisted) return res.status(404).json({message: "Shop is already blacklisted"})
 
-    blacklistedShop.blacklisted = true 
-    blacklistedShop.blacklistedBy = req.user.username
-    blacklistedShop.blacklistedAt = Date.now()
-    await blacklistedShop.save()
+    shop.blacklisted = true 
+    shop.blacklistedBy = req.user.username
+    shop.blacklistedAt = Date.now()
+    await shop.save()
 
     res.status(200).json({"message": "Shop blacklisted successfully."});
   } catch (error) {
@@ -90,40 +162,80 @@ const blacklistShop = async (req, res) => {
   }
 };
 
-// Survey Shop
-const surveyShop = async (req, res) => {
+// Change area 
+const shiftArea = async (req, res) => {
   try {
-    const { ids, formattedDate } = req.body; 
-    if (!Array.isArray(ids) || ids.length === 0) {
-      return res.status(400).json({ message: "No shop IDs provided" });
+    const { prevAreaId, newAreaId, ids } = req.body;
+
+    if (!prevAreaId || !newAreaId || !ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ message: "prevAreaId, newAreaId and ids are required" });
     }
-    // Fetch all shops
-    const shops = await Shop.find({ 
-      _id: { $in: ids },
-      deleted: { $in: [false, null] }
+
+    // 🔹 Find both areas
+    const prevArea = await Area.findOne({ _id: prevAreaId, deleted: { $in: [false, null] } });
+    if (!prevArea) return res.status(404).json({ message: "Previous area not found" });
+
+    const newArea = await Area.findOne({ _id: newAreaId, deleted: { $in: [false, null] } });
+    if (!newArea) return res.status(404).json({ message: "New area not found" });
+
+    // 🔹 Check access for both areas' cities
+    await checkCityAccess(req.user, prevArea.city);
+    await checkCityAccess(req.user, newArea.city);
+
+    const areaShiftedAt = new Date();
+    const areaShiftedBy = req.user.username;
+    const newAreaObjId = new ObjectId(newAreaId);
+
+    // 🔹 Process all shops
+    await Promise.all(ids.map(async (id) => {
+      const shopObjId = new ObjectId(id);
+
+      // 🔹 Find shop and update using save()
+      const shop = await checkShopAccess(req.user, shopObjId);
+
+      shop.area = newAreaId;
+      shop.prevArea = prevAreaId;
+      shop.areaName = newArea.name;
+      shop.prevAreaName = prevArea.name;
+      shop.areaShiftedAt = areaShiftedAt;
+      shop.areaShiftedBy = areaShiftedBy;
+      shop.updatedBy = areaShiftedBy;
+      shop.city = newArea.city
+      shop.cityName = newArea.city_name
+      await shop.save();
+
+      // 🔹 Update orders
+      await Order.updateMany(
+        { shopId: id },
+        { $set: { areaId: newAreaObjId } }
+      );
+    }));
+
+    // 🔹 Update areas
+    await Area.findByIdAndUpdate(prevAreaId, {
+      $pull: { shops: { $in: ids.map(id => new ObjectId(id)) } }
     });
 
-    for (let shop of shops) {
-      if (!shop.survey) shop.survey = [];
-      shop.survey.push(formattedDate);
-      await shop.save();
-    }
+    await Area.findByIdAndUpdate(newAreaId, {
+      $push: { shops: { $each: ids.map(id => new ObjectId(id)) } }
+    });
 
-    res.status(200).json({ message: `${shops.length} shops updated successfully.` });
+    res.status(200).json({ message: "Shops shifted successfully" });
+
   } catch (error) {
+    if (error.status) return res.status(error.status).json({ message: error.message });
     res.status(500).json({ message: error.message });
   }
 };
-
 
 // 4. Get shops under a specific area
 const getShopsByArea = async (req, res) => {
   try {
     const { areaId, allShops=false, ordered } = req.body;
-    
+  
     let query = {area: areaId, deleted: { $in: [false, null] }}
     
-    if (!allShops && req.user.role !== "me"){
+    if (!allShops){
       const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
       query.$or = [
         {visitedAt: {$exists: false}},
@@ -156,7 +268,7 @@ const getShopDetailes = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const shop = await Shop.findOne({_id: id, deleted: { $in: [false, null] }});
+    const shop = await checkShopAccess(req.user, id);
 
     if (!shop) return res.status(404).json("Shop not found");
 
@@ -171,8 +283,7 @@ const getShopOrders = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const shop = await Shop.findOne({_id: id, deleted: { $in: [false, null] }}, "orders");
-    if (!shop) return res.status(404).json("Shop not found");
+    const shop = await checkShopAccess(req.user, id);
         
     if (shop?.orders?.length > 0) {
       shop.orders.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
@@ -184,32 +295,7 @@ const getShopOrders = async (req, res) => {
   }
 };
 
-// 6. Change area 
-const shiftArea = async (req, res) => {
-  try {
-    const { prevAreaId, newAreaId, ids } = req.body;
-
-    ids.forEach(async (id) => {
-      const shopObjId  = new ObjectId(id);
-      
-      const prevArea = await Area.findOneAndUpdate({_id: prevAreaId, deleted: { $in: [false, null] }}, { $pull: { shops: shopObjId } }, {new: true});
-      if (!prevArea) return res.status(404).json("Area not found");
-      
-      const newArea = await Area.findOneAndUpdate({_id: newAreaId, deleted: { $in: [false, null] }}, { $push: { shops: shopObjId } }, {new: true});
-      if (!newArea) return res.status(404).json("Area not found");
-      
-      const areaId = new ObjectId(newAreaId);
-      await Shop.findOneAndUpdate({_id: shopObjId, deleted: { $in: [false, null] }}, {$set: {area: newAreaId, prevArea: prevAreaId, areaName: newArea.name, prevAreaName: prevArea.name, areaShiftedAt: Date.now(), areaShiftedBy: req.user.username}}, {new: true})
-      await Order.updateMany({shopId: id}, { $set: { areaId } });
-    })
-    
-    res.status(200).json({"message": "Shop shifted successfully"});
-
-  } catch (error) {
-    res.status(500).json(error.message);
-  }
-};
-
+// 6. 
 
 // 7. CSV Export
 const csvExportShop = async (req, res) => {
@@ -345,5 +431,4 @@ module.exports = {
   getShopOrders,
   updateShopAreaNames,
   blacklistShop,
-  surveyShop
 };

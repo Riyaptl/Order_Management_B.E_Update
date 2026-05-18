@@ -41,6 +41,7 @@ const createProduct = async (req, res) => {
       price_MRP: pricingDoc?.MRP,
       category: categoryDoc?._id,
       category_name: categoryDoc?.name,
+      rate: categoryDoc.rate,
       createdBy: req.user.username
     });
 

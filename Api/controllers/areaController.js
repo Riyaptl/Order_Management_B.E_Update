@@ -3,19 +3,14 @@ const City = require("../models/City");
 const { Parser } = require("json2csv");
 const Shop = require("../models/Shop");
 
-// Helper - check city access
 const checkCityAccess = async (reqUser, cityId) => {
-  if (!["HR", "Admin"].includes(reqUser.dept_name)) return;
+  if (["HR", "Admin"].includes(reqUser.dept_name)) return;
 
-  const user = await User.findById(reqUser._id).select("city subordinates");
-  const allUserIds = [reqUser._id, ...user.subordinates];
+  const user = await User.findById(reqUser._id).select("allCities");
 
-  const cityAssigned = await User.findOne({
-    _id: { $in: allUserIds },
-    city: cityId
-  });
+  const hasAccess = user.allCities.map(c => c.toString()).includes(cityId.toString());
 
-  if (!cityAssigned) {
+  if (!hasAccess) {
     throw { status: 403, message: "You do not have access to this city" };
   }
 };
@@ -358,4 +353,5 @@ module.exports = {
   getAreas,
   getAreasDrop,
   csvExportArea,
+  checkCityAccess
 };

@@ -47,12 +47,15 @@ const TargetReportSchema = new mongoose.Schema({
     },
     default: {}
   },
+  subTargetLastCalculatedAt: {
+    type: Date
+  },
   assignedBy: {
     type: String
   },
   assignedAt: {
     type: Date
   }
-}, {timestamps: true});
+}, { timestamps: true });
 
 module.exports = mongoose.model("TargetReport", TargetReportSchema);

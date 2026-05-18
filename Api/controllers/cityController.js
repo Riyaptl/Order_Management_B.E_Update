@@ -1,5 +1,6 @@
 const City = require("../models/City")
 const { Parser } = require("json2csv");
+const { checkCityAccess } = require("./areaController");
 
 
 // 1. Create city
@@ -7,8 +8,8 @@ const createCity = async (req, res) => {
   try {
     const { name, state } = req.body;
 
-    if (!name) {
-      return res.status(400).json({ message: "Name is required" });
+    if (!name || !state) {
+      return res.status(400).json({ message: "Name and State are required" });
     }
 
     const existingCity = await City.findOne({ name: name.trim() });
@@ -89,22 +90,45 @@ const updateCity = async (req, res) => {
   }
 };
 
-
-// get all cities with _id which will be passed in area creation
+// Get all cities
 const getAllCities = async (req, res) => {
   try {
+    const { state } = req.query;
 
-    const {state} = req.body
-
-    let query = {}
-    if (state){
-      query["state"] = state
+    if (req.user.dept_name === "Partners") {
+      return res.status(403).json({ message: "Access denied for Partners" });
     }
 
-    const cities = await City.find(query, { name: 1, _id: 1 });
+    let query = {};
+
+    // 🔹 State filter
+    if (state) {
+      query.state = state.trim();
+    }
+
+    // ACCESS CONTROL 
+    if (!["HR", "Admin"].includes(req.user.dept_name)) {
+
+      // 1. Get current user + subordinates
+      const reqUser = await User.findById(req.user._id).select("subordinates");
+
+      const allUsers = await User.find({
+        _id: { $in: [req.user._id, ...reqUser.subordinates] }
+      }).select("_id");
+
+      const accessibleUserIds = allUsers.map(u => u._id);
+
+      // 2. Restrict cities by sales field
+      query.sales = { $in: accessibleUserIds };
+    }
+
+    const cities = await City.find(query)
+      .select("_id name");
+
     return res.status(200).json(cities);
+
   } catch (error) {
-    return res.status(500).json(error);
+    return res.status(500).json({ message: error.message });
   }
 };
 
@@ -143,9 +167,38 @@ const getCitiesDrop = async (req, res) => {
   }
 };
 
+const getCitySalesDrop = async (req, res) => {
+  try {
+    const { city } = req.body;
+    if (!city) {
+      return res.status(400).json({ message: "City is required" });
+    }
+
+    const cityDoc = await City.findOne({ name: city.trim() }).select("_id");
+    if (!cityDoc) {
+      return res.status(404).json({ message: "City not found" });
+    }
+
+    await checkCityAccess(req.user, cityDoc._id);
+
+    // 🔹 Find all active users who have this city in their allCities array
+    const users = await User.find({
+      allCities: cityDoc._id,
+      active: true,
+      dept_name: { $nin: ["HR", "Admin", "Partners"] }
+    }).select("_id username");
+
+    res.status(200).json({ users });
+
+  } catch (error) {
+    if (error.status) return res.status(error.status).json({ message: error.message });
+    res.status(500).json({ message: error.message });
+  }
+};
 module.exports = {
   createCity,
   updateCity,
   getAllCities,
-  getCitiesDrop
+  getCitiesDrop,
+  getCitySalesDrop
 };

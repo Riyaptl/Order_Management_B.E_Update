@@ -1,13 +1,14 @@
 const Pricing = require("../models/Pricing");
+const Category = require("../models/Category");
 const Product = require("../models/Poduct");
 
 // Create pricing
 const createCategory = async (req, res) => {
   try {
-    const { name } = req.body;
+    const { name, rate } = req.body;
 
-    if (!name) {
-      return res.status(400).json({ message: "Category name is required" });
+    if (!name || !rate) {
+      return res.status(400).json({ message: "Category name and rate is required" });
     }
 
     const existing = await Category.findOne({ name, deleted: false });
@@ -18,6 +19,7 @@ const createCategory = async (req, res) => {
 
     const category = await Category.create({
       name,
+      rate,
       createdBy: req.user.username
     });
 
@@ -30,11 +32,11 @@ const createCategory = async (req, res) => {
   }
 };
 
-// Update - name only
+// Update - name, rate only
 const updateCategory = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name } = req.body;
+    const { name, rate } = req.body;
 
     if (!name) {
       return res.status(400).json({ message: "Name is required" });
@@ -45,7 +47,7 @@ const updateCategory = async (req, res) => {
     if (!category || category.deleted) {
       return res.status(404).json({ message: "Category not found" });
     }
-
+c
     const duplicate = await Category.findOne({
       name,
       _id: { $ne: id },
@@ -58,6 +60,10 @@ const updateCategory = async (req, res) => {
 
     // update category
     category.name = name;
+    if (rate) {
+      category.rate = rate;
+      await Product.updateMany({_id: {$in: category.products}}, { $set: { rate } })
+    }
     category.updatedBy = req.user.username;
     await category.save();
 
@@ -114,6 +120,24 @@ const getCategoryDrop = async (req, res) => {
   }
 };
 
+// Get rates of all categories
+const getCategoryRates = async (req, res) => {
+  try {
+    const categories = await Category.find({deleted: false})
+      .select("name rate");
+
+    const rates = {};
+    categories.forEach(c => {
+      rates[c.name] = Number(c.rate);
+    });
+
+    res.status(200).json(rates);
+
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 // Delete 
 const deleteCategory = async (req, res) => {
   try {
@@ -146,4 +170,4 @@ const deleteCategory = async (req, res) => {
   }
 };
 
-module.exports = {createCategory, updateCategory, getAllCategories, getCategoryDrop, deleteCategory}
+module.exports = {createCategory, updateCategory, getAllCategories, getCategoryDrop, deleteCategory, getCategoryRates}

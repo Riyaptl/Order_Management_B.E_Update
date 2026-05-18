@@ -13,10 +13,10 @@ const {
   csvImportShop,
   updateShopAreaNames,
   blacklistShop,
-  surveyShop,
 } = require("../controllers/shopController");
 const authenticateUser = require("../middlewares/JwtAuth");
 const checkRole = require("../middlewares/RoleAuth");
+const checkDepartment = require("../middlewares/DepartmentAuth");
 const multer = require('multer');
 const path = require('path');
 
@@ -26,18 +26,31 @@ if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir);
 const upload = multer({ dest: uploadDir });
 
 
-// Admin-only access for create, update, delete
+// Create shop
 router.post("/", authenticateUser, createShop);
-router.post("/:id", authenticateUser, updateShop);
-router.post("/delete/one", authenticateUser, deleteShop);
-router.post("/blacklist/one", authenticateUser, checkRole("admin", "sr", "distributor", "tl"), blacklistShop);
-router.post("/survey/multiple", authenticateUser, checkRole("admin", "me"), surveyShop);
-router.post("/shift/area", authenticateUser, checkRole('admin', 'sr', "tl"), shiftArea);
 
-// Public or protected read
+// Update shop
+router.post("/:id", authenticateUser, updateShop);
+
+// Delete shop
+router.post("/delete/one", authenticateUser, checkDepartment("Admin", "HR", "Sales"), deleteShop);
+
+// Blacklist shop
+router.post("/blacklist/one", authenticateUser, checkDepartment("Admin", "HR", "Sales"), blacklistShop);
+
+// Shift area
+router.post("/shift/area", authenticateUser, checkDepartment("Admin", "HR", "Sales"), shiftArea);
+
+// Read shops by area- after getAreaDrop
 router.post("/route/all", authenticateUser, getShopsByArea);
+
+// Read shop
 router.get("/details/:id", authenticateUser, getShopDetailes);
+
+// Read shop orders
 router.get("/orders/:id", authenticateUser, getShopOrders);
+
+
 
 // 4. CSV Export
 router.post("/csv/export", authenticateUser, csvExportShop);
@@ -45,6 +58,7 @@ router.post("/csv/export", authenticateUser, csvExportShop);
 // 4. CSV Import
 router.use(authenticateUser, checkRole("admin"))
 router.post("/csv/import/:areaId", upload.single('file'), csvImportShop);
-
 router.post("/area/name", updateShopAreaNames);
+
+
 module.exports = router;
